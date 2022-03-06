@@ -26,9 +26,12 @@ namespace EntitiesGenerator
             }
 
             // For any type declaration node, create a code action to reverse the identifier text.
-            var action = CodeAction.Create("Generate an entity class for this DAO", c => CreateEntities(context.Document, typeDecl, c));
+            var entityAction = CodeAction.Create("Generate an entity class for this DAO", c => CreateEntities(context.Document, typeDecl, c));
+            context.RegisterRefactoring(entityAction);
 
-            context.RegisterRefactoring(action);
+            var crudAction = CodeAction.Create("Generate a CRUD resolver for this DAO", c => CreateCrudResolver(context.Document, typeDecl, c));
+            context.RegisterRefactoring(crudAction);
+
         }
 
         private async Task<Solution> CreateEntities(Document document, TypeDeclarationSyntax typeDecl, CancellationToken cancellationToken)
@@ -36,13 +39,24 @@ namespace EntitiesGenerator
             var daoObjectName = typeDecl.Identifier.ValueText;
             var entityFileName = daoObjectName.Substring(0, daoObjectName.Length - 3);
 
-
-
-
-            var entityFile = EntityClassGenerator.CreateClassFileString(daoObjectName.Substring(0, daoObjectName.Length-3), typeDecl);
+            var entityFile = await EntityClassGenerator.CreateClassFileString(document, daoObjectName.Substring(0, daoObjectName.Length-3), typeDecl);
             var proj = document.Project;
 
-            return proj.AddDocument(entityFileName, entityFile).Project.Solution;
+            return proj
+                .AddDocument(entityFileName, entityFile.File, new [] { "Services", entityFile.Name, "Entities"})
+                .Project.Solution;
+        }
+
+        private async Task<Solution> CreateCrudResolver(Document document, TypeDeclarationSyntax typeDecl, CancellationToken cancellationToken)
+        {
+            var daoObjectName = typeDecl.Identifier.ValueText;
+            var entityFileName = daoObjectName.Substring(0, daoObjectName.Length - 3);
+
+            var entityFile = await CrudResolverEntityGenerator.CreateClassFileString(document, typeDecl);
+            
+            return document.Project
+                .AddDocument(entityFileName, entityFile.File, new[] { "Services", entityFile.Name, "DataAccess" })
+                .Project.Solution;
         }
     }
 }

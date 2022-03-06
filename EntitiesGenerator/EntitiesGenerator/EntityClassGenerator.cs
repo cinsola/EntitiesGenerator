@@ -1,5 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using EntitiesGenerator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -8,11 +10,13 @@ namespace Roslyn.CodeGeneration
 {
     public static class EntityClassGenerator
     {
-        public static string CreateClassFileString(string newClassName, TypeDeclarationSyntax daoClass)
+        public static async Task<FileScope> CreateClassFileString(Document document, string newClassName, TypeDeclarationSyntax daoClass)
         {
-            var namespaceToImport = (daoClass.Parent as NamespaceDeclarationSyntax).Name as IdentifierNameSyntax;
+            var syntaxRoot = daoClass.SyntaxTree.GetRoot();
+            var namespaceToImport = syntaxRoot.DescendantNodes().OfType<NamespaceDeclarationSyntax>().First().Name.ToString();
+
             // Create a namespace: (namespace CodeGenerationSample)
-            var @namespace = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(namespaceToImport.Identifier.ValueText)).NormalizeWhitespace();
+            var @namespace = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(namespaceToImport)).NormalizeWhitespace();
 
             // Add System using statement: (using System)
             @namespace = @namespace.AddUsings(SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("System")));
@@ -45,7 +49,12 @@ namespace Roslyn.CodeGeneration
                 .NormalizeWhitespace()
                 .ToFullString();
 
-            return code;
+            var scope = await GetTableName(document, daoClass);
+            return new FileScope
+            {
+                File = code,
+                Name = scope
+            };
         }
 
         public static MethodDeclarationSyntax CreateCastMethod(TypeDeclarationSyntax daoClass,
@@ -91,6 +100,15 @@ namespace Roslyn.CodeGeneration
                 .WithExpressions(SyntaxFactory.SeparatedList<ExpressionSyntax>(constructor.Skip(1).ToArray()))));
 
             return SyntaxFactory.Block(SyntaxFactory.SingletonList<StatementSyntax>(returnStatement)).NormalizeWhitespace();
+        }
+
+        public static async Task<string> GetTableName(Document document, TypeDeclarationSyntax typeDecl)
+        {
+            var model = await document.GetSemanticModelAsync();
+            var ts = (ITypeSymbol)model.GetDeclaredSymbol(typeDecl);
+            var tableAttrbitue = ts.GetAttributes().FirstOrDefault(x => x.AttributeClass.Name == "TableAttribute");
+
+            return tableAttrbitue.ConstructorArguments.First().Value.ToString();
         }
     }
 }
